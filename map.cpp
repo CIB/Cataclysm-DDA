@@ -2993,12 +2993,8 @@ void map::debug()
  getch();
 }
 
-#include <pthread.h>
-extern pthread_mutex_t maplock;
-
 void map::draw(game *g, WINDOW* w, const point center)
 {
- g->clear_map_cache();
  g->reset_light_level();
  const int g_light_level = (int)g->light_level();
  const int natural_sight_range = g->u.sight_range(1);
@@ -3015,7 +3011,6 @@ void map::draw(game *g, WINDOW* w, const point center)
             i, i % my_MAPSIZE, i / my_MAPSIZE, MAPBUFFER.size());
  }
 
- pthread_mutex_lock(&maplock);
  for  (int realx = center.x - light_sight_range; realx <= center.x + light_sight_range; realx++) {
   for (int realy = center.y - light_sight_range; realy <= center.y + light_sight_range; realy++) {
    const int dist = rl_dist(g->u.posx, g->u.posy, realx, realy);
@@ -3067,41 +3062,41 @@ void map::draw(game *g, WINDOW* w, const point center)
 
    bool actually_draw = (realx >= center.x - getmaxx(w)/2) && (realx <= center.x + getmaxy(w)/2) && (realy >= center.y - getmaxy(w)/2) && (realy <= center.y + getmaxy(w)/2);
 
-   if(actually_draw) {
    if ((g->u.has_active_bionic("bio_night") && dist < 15 && dist > natural_sight_range) || // if bio_night active, blackout 15 tile radius around player
        dist > real_max_sight_range ||
        (dist > light_sight_range &&
          (lit == LL_DARK ||
          (u_sight_impaired && lit != LL_BRIGHT) ||
 	  !can_see))) {
+    if(actually_draw) {
     if (u_is_boomered)
    	 mvwputch(w, realy+getmaxy(w)/2 - center.y, realx+getmaxx(w)/2 - center.x, c_magenta, '#');
     else
          mvwputch(w, realy+getmaxy(w)/2 - center.y, realx+getmaxx(w)/2 - center.x, c_dkgray, '#');
+    }
    } else if (dist > light_sight_range && u_sight_impaired && lit == LL_BRIGHT) {
+    if(actually_draw) {
     if (u_is_boomered)
      mvwputch(w, realy+getmaxy(w)/2 - center.y, realx+getmaxx(w)/2 - center.x, c_pink, '#');
     else
      mvwputch(w, realy+getmaxy(w)/2 - center.y, realx+getmaxx(w)/2 - center.x, c_ltgray, '#');
+    }
    } else if (dist <= u_clairvoyance || can_see) {
+    if(actually_draw) {
     if (bRainOutside && INBOUNDS(realx, realy) && is_outside(realx, realy))
      g->mapRain[realy + getmaxy(w)/2 - center.y][realx + getmaxx(w)/2 - center.x] = true;
+    }
     drawsq(w, g->u, realx, realy, false, true, center.x, center.y,
            (dist > low_sight_range && LL_LIT > lit) ||
 	   (dist > sight_range && LL_LOW == lit),
-           LL_BRIGHT == lit);
+           LL_BRIGHT == lit, actually_draw);
    } else {
+    if(actually_draw) {
     mvwputch(w, realy+getmaxy(w)/2 - center.y, realx+getmaxx(w)/2 - center.x, c_black,' ');
-   }
-  } else {
-    drawsq(w, g->u, realx, realy, false, true, center.x, center.y,
-           (dist > low_sight_range && LL_LIT > lit) ||
-	   (dist > sight_range && LL_LOW == lit),
-           LL_BRIGHT == lit, false);
+    }
    }
   }
  }
- pthread_mutex_unlock(&maplock);
  int atx = getmaxx(w)/2 + g->u.posx - center.x, aty = getmaxy(w)/2 + g->u.posy - center.y;
  if (atx >= 0 && atx < TERRAIN_WINDOW_WIDTH && aty >= 0 && aty < TERRAIN_WINDOW_HEIGHT) {
   mvwputch(w, aty, atx, g->u.color(), '@');
@@ -3214,8 +3209,10 @@ void map::drawsq(WINDOW* w, player &u, const int x, const int y, const bool inve
   sym = determine_wall_corner(x, y, sym);
 
  int flags3d = 0;
- if(terlist[curr_ter].movecost == 0) {
+ if(move_cost(x, y) == 0) {
      flags3d |= 1;
+ } else if(move_cost(x, y) > 2) {
+     flags3d |= (1<<2); // Higher move cost
  }
  g->update_map_cache(x, y, sym, tercol, flags3d);
 

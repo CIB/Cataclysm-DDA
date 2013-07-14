@@ -232,6 +232,7 @@ void monster::draw(WINDOW *w, int plx, int ply, bool inv)
   color = color_with_effects();
   mvwputch(w, y, x, color, type->sym);
  }
+ g->update_map_cache(posx, posy, type->sym, color, (1<<3));
 }
 
 nc_color monster::color_with_effects()
