@@ -2993,8 +2993,12 @@ void map::debug()
  getch();
 }
 
+#include <pthread.h>
+extern pthread_mutex_t maplock;
+
 void map::draw(game *g, WINDOW* w, const point center)
 {
+ g->clear_map_cache();
  g->reset_light_level();
  const int g_light_level = (int)g->light_level();
  const int natural_sight_range = g->u.sight_range(1);
@@ -3011,8 +3015,9 @@ void map::draw(game *g, WINDOW* w, const point center)
             i, i % my_MAPSIZE, i / my_MAPSIZE, MAPBUFFER.size());
  }
 
- for  (int realx = center.x - getmaxx(w)/2; realx <= center.x + getmaxx(w)/2; realx++) {
-  for (int realy = center.y - getmaxy(w)/2; realy <= center.y + getmaxy(w)/2; realy++) {
+ pthread_mutex_lock(&maplock);
+ for  (int realx = center.x - light_sight_range; realx <= center.x + light_sight_range; realx++) {
+  for (int realy = center.y - light_sight_range; realy <= center.y + light_sight_range; realy++) {
    const int dist = rl_dist(g->u.posx, g->u.posy, realx, realy);
    int sight_range = light_sight_range;
    int low_sight_range = lowlight_sight_range;
@@ -3060,6 +3065,9 @@ void map::draw(game *g, WINDOW* w, const point center)
     }
    }
 
+   bool actually_draw = (realx >= center.x - getmaxx(w)/2) && (realx <= center.x + getmaxy(w)/2) && (realy >= center.y - getmaxy(w)/2) && (realy <= center.y + getmaxy(w)/2);
+
+   if(actually_draw) {
    if ((g->u.has_active_bionic("bio_night") && dist < 15 && dist > natural_sight_range) || // if bio_night active, blackout 15 tile radius around player
        dist > real_max_sight_range ||
        (dist > light_sight_range &&
@@ -3085,8 +3093,15 @@ void map::draw(game *g, WINDOW* w, const point center)
    } else {
     mvwputch(w, realy+getmaxy(w)/2 - center.y, realx+getmaxx(w)/2 - center.x, c_black,' ');
    }
+  } else {
+    drawsq(w, g->u, realx, realy, false, true, center.x, center.y,
+           (dist > low_sight_range && LL_LIT > lit) ||
+	   (dist > sight_range && LL_LOW == lit),
+           LL_BRIGHT == lit, false);
+   }
   }
  }
+ pthread_mutex_unlock(&maplock);
  int atx = getmaxx(w)/2 + g->u.posx - center.x, aty = getmaxy(w)/2 + g->u.posy - center.y;
  if (atx >= 0 && atx < TERRAIN_WINDOW_WIDTH && aty >= 0 && aty < TERRAIN_WINDOW_HEIGHT) {
   mvwputch(w, aty, atx, g->u.color(), '@');
@@ -3096,7 +3111,7 @@ void map::draw(game *g, WINDOW* w, const point center)
 
 void map::drawsq(WINDOW* w, player &u, const int x, const int y, const bool invert_arg,
                  const bool show_items_arg, const int view_center_x_arg, const int view_center_y_arg,
-                 const bool low_light, const bool bright_light)
+                 const bool low_light, const bool bright_light, const bool actually_draw)
 {
  bool invert = invert_arg;
  bool show_items = show_items_arg;
@@ -3198,14 +3213,22 @@ void map::drawsq(WINDOW* w, player &u, const int x, const int y, const bool inve
  if(sym == LINE_XOXO || sym == LINE_OXOX)//vertical or horizontal
   sym = determine_wall_corner(x, y, sym);
 
- if (invert)
-  mvwputch_inv(w, j, k, tercol, sym);
- else if (hi)
-  mvwputch_hi (w, j, k, tercol, sym);
- else if (graf)
-  mvwputch    (w, j, k, red_background(tercol), sym);
- else
-  mvwputch    (w, j, k, tercol, sym);
+ int flags3d = 0;
+ if(terlist[curr_ter].movecost == 0) {
+     flags3d |= 1;
+ }
+ g->update_map_cache(x, y, sym, tercol, flags3d);
+
+ if(actually_draw) {
+     if (invert)
+      mvwputch_inv(w, j, k, tercol, sym);
+     else if (hi)
+      mvwputch_hi (w, j, k, tercol, sym);
+     else if (graf)
+      mvwputch    (w, j, k, red_background(tercol), sym);
+     else
+      mvwputch    (w, j, k, tercol, sym);
+ }
 }
 
 /*

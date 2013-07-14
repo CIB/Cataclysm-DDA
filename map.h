@@ -150,7 +150,7 @@ class map
   */
  void drawsq(WINDOW* w, player &u, const int x, const int y, const bool invert, const bool show_items,
              const int view_center_x = -1, const int view_center_y = -1,
-             const bool low_light = false, const bool bright_level = false);
+             const bool low_light = false, const bool bright_level = false, const bool actually_draw = true);
 
 // File I/O
  virtual void save(overmap *om, unsigned const int turn, const int x, const int y, const int z);

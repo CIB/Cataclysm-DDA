@@ -106,6 +106,7 @@ game::game() :
  init_vehicles();             // Set up vehicles                  (SEE veh_typedef.cpp)
  init_autosave();             // Set up autosave
  init_diseases();             // Set up disease lookup table
+ init_3d();
  } catch(std::string &error_message)
  {
      uquit = QUIT_ERROR;

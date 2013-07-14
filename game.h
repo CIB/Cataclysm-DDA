@@ -95,6 +95,11 @@ class game
   game();
   ~game();
   void init_ui();
+  void init_3d();
+  void clear_map_cache();
+  void begin_3d_rendering();
+  void stop_3d_rendering();
+  void update_map_cache(int x, int y, long sym, nc_color col, int flags);
   void setup();
   bool game_quit(); // True if we actually quit the game - used in main.cpp
   bool game_error();
