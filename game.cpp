@@ -3767,6 +3767,9 @@ void game::draw_ter(int posx, int posy)
            (u.has_active_bionic("bio_infrared") || u.has_trait(PF_INFRARED)))
    mvwputch(w_terrain, VIEWY + z[i].posy - posy, VIEWX + z[i].posx - posx,
             c_red, '?');
+  if(u_see(&(z[i]))) {
+    g->update_map_cache(z[i].posx, z[i].posy, z[i].type->sym, z[i].type->color, (1<<3));
+  }
  }
  // Draw NPCs
  for (int i = 0; i < active_npc.size(); i++) {
