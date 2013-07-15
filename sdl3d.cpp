@@ -100,11 +100,33 @@ map_tile map_cache[SEEX_3D][SEEY_3D];
 // Map symbols to textures.
 static std::map<long, GLuint> texture_cache;
 
+static int player_pos_x;
+static int player_pos_y;
+static bool is_driving;
+static int turn_dir;
+
+// This function will be called from the main thread, not the drawing thread.
 void game::begin_3d_rendering() {
+    SDL_mutexP(maplock);
     clear_map_cache();
+
+    // Read and store some relevant data like player position etc. so that
+    // this doesn't de-sync while rendering.
+    player_pos_x = g->u.posx; player_pos_y = g->u.posy;
+    is_driving = false;
+    if(g->u.controlling_vehicle) {
+         int veh_part = 0;
+         vehicle *veh = g->m.veh_at(g->u.posx, g->u.posy, veh_part);
+         if (veh) {
+             is_driving = true;
+             turn_dir = veh->turn_dir;
+         }
+    }
 }
 
+// This function will be called from the main thread, not the drawing thread.
 void game::stop_3d_rendering() {
+    SDL_mutexV(maplock);
 }
 
 void game::clear_map_cache() {
@@ -164,28 +186,25 @@ void drawScene() {
     float zTranslation = 2;
     float yRotation = 0;
     float zRotation = 60;
-    if(g->u.controlling_vehicle) {
-         int veh_part = 0;
-         vehicle *veh = g->m.veh_at(g->u.posx, g->u.posy, veh_part);
-         if (veh) {
-             // Rotate the view by the vehicle's rotation
-            //glRotatef(veh->turn_dir, 0.0f, 1.0f, 0.0f);
-            yRotation = 90 + veh->turn_dir;
-            yTranslation = 8;
-            zTranslation = 4;
-            zRotation = 20;
-         }
+
+    if(is_driving) {
+         // Rotate the view by the vehicle's rotation
+        //glRotatef(veh->turn_dir, 0.0f, 1.0f, 0.0f);
+        yRotation = 90 + turn_dir;
+        yTranslation = 8;
+        zTranslation = 4;
+        zRotation = 20;
     }
 
     glTranslatef(0, 0, -yTranslation);
     glRotatef(zRotation, 1, 0, 0);
     glRotatef(yRotation, 0.0f, 1.0f, 0.0f);
-    glTranslatef(-g->u.posx,  -zTranslation,  -g->u.posy);
+    glTranslatef(-player_pos_x,  -zTranslation,  -player_pos_y);
 
     for(int x=0; x<SEEX_3D; x++) {
         for(int y=0; y<SEEY_3D; y++) {
             map_tile *tile = &map_cache[x][y];
-            bool is_player = x == g->u.posx && y == g->u.posy;
+            bool is_player = x == player_pos_x && y == player_pos_y;
             if(tile->sym || is_player) {
                 long sym = tile->sym;
                 nc_color col = tile->col;
@@ -243,7 +262,7 @@ void drawScene() {
                 glColor3f(color.r / 255.0f, color.g / 255.0f, color.b / 255.0f);
 
                 float height = 1.0f;
-                if(tile->flags & (1<<2)) {
+                if(tile->flags & (1<<2) && !is_player) {
                     height = 0.3f;
                 }
                 else if(tile->flags & (1<<3) || is_player) {

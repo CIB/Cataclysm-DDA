@@ -3740,11 +3740,9 @@ bool game::isBetween(int test, int down, int up)
 	else return false;
 }
 
-#include <SDL2/SDL.h>
-extern SDL_mutex *maplock;
 void game::draw_ter(int posx, int posy)
 {
- SDL_mutexP(maplock);
+ g->begin_3d_rendering();
  g->clear_map_cache();
  mapRain.clear();
 // posx/posy default to -999
@@ -3796,7 +3794,7 @@ void game::draw_ter(int posx, int posy)
    }
   }
  }
- SDL_mutexV(maplock);
+ g->stop_3d_rendering();
  wrefresh(w_terrain);
  if (u.has_disease("visuals") || (u.has_disease("hot_head") && u.disease_intensity("hot_head") != 1))
    hallucinate(posx, posy);
