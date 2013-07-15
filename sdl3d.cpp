@@ -3,7 +3,6 @@
 #include "game.h"
 #include <GL/gl.h>
 #include <GL/glu.h>
-#include <pthread.h>
 
 
 SDL_Surface *screen;
@@ -15,8 +14,8 @@ static GLfloat best_anisotropy;
 TTF_Font *font;
 
 int videoFlags;
-pthread_mutex_t maplock = PTHREAD_MUTEX_INITIALIZER;
-pthread_t drawing_thread;
+SDL_mutex *maplock;
+SDL_Thread* drawing_thread;
 
 static std::map<nc_color, SDL_Color> color_cache;
 
@@ -145,7 +144,7 @@ void initGL() {
 
 void drawScene() {
     // Shouldn't draw while the map is being built.
-    pthread_mutex_lock(&maplock);
+    SDL_mutexP(maplock);
 
     glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
 
@@ -421,7 +420,7 @@ void drawScene() {
     glFlush();
     SDL_GL_SwapBuffers( );
 
-    pthread_mutex_unlock(&maplock);
+    SDL_mutexV(maplock);
 }
 
 int resizeWindow(int width, int height)
@@ -450,7 +449,7 @@ int resizeWindow(int width, int height)
 
 int tick_3d();
 
-void* sdl_thread(void* data) {
+int sdl_thread(void* data) {
     SDL_Init( SDL_INIT_EVERYTHING );
 
     init_color_cache();
@@ -478,11 +477,12 @@ void* sdl_thread(void* data) {
         SDL_Delay(100);
     }
 
-    return NULL;
+    return 0;
 }
 
 void game::init_3d() {
-    pthread_create(&drawing_thread, NULL, sdl_thread, NULL);
+    maplock = SDL_CreateMutex();
+    drawing_thread = SDL_CreateThread(&sdl_thread, NULL);
 }
 
 int tick_3d() {
