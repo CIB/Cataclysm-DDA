@@ -3740,7 +3740,7 @@ bool game::isBetween(int test, int down, int up)
 	else return false;
 }
 
-#include <SDL/SDL.h>
+#include <SDL2/SDL.h>
 extern SDL_mutex *maplock;
 void game::draw_ter(int posx, int posy)
 {

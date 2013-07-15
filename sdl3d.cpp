@@ -1,26 +1,28 @@
-#include "SDL/SDL.h"
-#include "SDL/SDL_ttf.h"
+#include "SDL2/SDL.h"
+#include "SDL2/SDL_ttf.h"
 #include "game.h"
 #include <GL/gl.h>
 #include <GL/glu.h>
 
 
-SDL_Surface *screen;
+static SDL_Surface *screen;
+static SDL_Window *window;
+static SDL_Renderer *renderer;
 
-SDL_Surface *image;
-GLuint texture;
+static SDL_Surface *image;
+static GLuint texture;
 static GLfloat best_anisotropy;
 
-TTF_Font *font;
+static TTF_Font *font;
 
-int videoFlags;
+static int videoFlags;
 SDL_mutex *maplock;
-SDL_Thread* drawing_thread;
+static SDL_Thread* drawing_thread;
 
 static std::map<nc_color, SDL_Color> color_cache;
 
 SDL_Color RGB(char r, char g,  char b) {
-    SDL_Color rval; rval.unused = 0;
+    SDL_Color rval;
     rval.r = r; rval.g = g; rval.b = b;
     return rval;
 }
@@ -418,7 +420,7 @@ void drawScene() {
     }
 
     glFlush();
-    SDL_GL_SwapBuffers( );
+    SDL_GL_SwapWindow(window);
 
     SDL_mutexV(maplock);
 }
@@ -460,14 +462,12 @@ int sdl_thread(void* data) {
     static int width = 400;
     static int height = 400;
 
-    videoFlags  = SDL_OPENGL;
-    videoFlags |= SDL_GL_DOUBLEBUFFER;
-    videoFlags |= SDL_HWPALETTE;
-    videoFlags |= SDL_RESIZABLE;
+    videoFlags  = SDL_WINDOW_OPENGL;
+    videoFlags |= SDL_WINDOW_RESIZABLE;
 
     SDL_GL_SetAttribute( SDL_GL_DOUBLEBUFFER, 1 );
 
-    screen = SDL_SetVideoMode( width, height, 32, videoFlags );
+    SDL_CreateWindowAndRenderer(width, height, videoFlags, &window, &renderer);
 
     initGL();
 
@@ -482,62 +482,22 @@ int sdl_thread(void* data) {
 
 void game::init_3d() {
     maplock = SDL_CreateMutex();
-    drawing_thread = SDL_CreateThread(&sdl_thread, NULL);
+    drawing_thread = SDL_CreateThread(&sdl_thread, "3d_drawing_thread", NULL);
 }
 
 int tick_3d() {
-    #ifdef undefined
-    while ( SDL_PollEvent( &event ) )
-    {
-        switch( event.type )
-        {
-        case SDL_ACTIVEEVENT:
-            /* Something's happend with our focus
-             * If we lost focus or we are iconified, we
-             * shouldn't draw the screen
-             */
-            if ( event.active.gain == 0 )
-            isActive = FALSE;
-            else
-            isActive = TRUE;
-            break;
-        case SDL_VIDEORESIZE:
-            /* handle resize event */
-            surface = SDL_SetVideoMode( event.resize.w,
-                        event.resize.h,
-                        16, videoFlags );
-            if ( !surface )
-            {
-                fprintf( stderr, "Could not get a surface after resize: %s\n", SDL_GetError( ) );
-                Quit( 1 );
-            }
-            resizeWindow( event.resize.w, event.resize.h );
-            break;
-        case SDL_KEYDOWN:
-            /* handle key presses */
-            handleKeyPress( &event.key.keysym );
-            break;
-        case SDL_QUIT:
-            /* handle quit requests */
-            done = TRUE;
-            break;
-        default:
-            break;
-        }
-    }
-    #endif
-
     SDL_Event event;
     while ( SDL_PollEvent( &event ) )
     {
         switch( event.type )
         {
-        case SDL_VIDEORESIZE:
-            screen = SDL_SetVideoMode( event.resize.w,
-                        event.resize.h,
-                        16, videoFlags );
-            resizeWindow( event.resize.w, event.resize.h );
+        case SDL_WINDOWEVENT:
+            switch (event.window.event) {
+            case SDL_WINDOWEVENT_RESIZED:
+                resizeWindow( event.window.data1, event.window.data2 );
             break;
+            }
+        break;
         default:
             break;
         }

@@ -193,7 +193,7 @@ else
   endif
 endif
 
-LDFLAGS += -lGL -lGLU -lSDL -lpthread -lSDL_ttf
+LDFLAGS += -lGL -lGLU -lSDL2 -lSDL2_ttf
 
 ifeq ($(TARGETSYSTEM),LINUX)
   BINDIST_EXTRAS += cataclysm-launcher
