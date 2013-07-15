@@ -246,6 +246,7 @@ class map
  void remove_field(const int x, const int y, const field_id field_to_remove);
  bool process_fields(game *g);				// See fields.cpp
  bool process_fields_in_submap(submap *sm, tile_coordinate submap_x, tile_coordinate submap_y);	// See fields.cpp
+ void fastforward_fields_in_submap(submap *sm, tile_coordinate submap_x, tile_coordinate submap_y);
  void step_in_field(const int x, const int y, game *g);		// See fields.cpp
  void mon_in_field(const int x, const int y, game *g, monster *z);	// See fields.cpp
  void field_effect(int x, int y, game *g); //See fields.cpp

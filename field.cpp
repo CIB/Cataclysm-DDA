@@ -2,6 +2,8 @@
 #include "map.h"
 #include "field.h"
 #include "game.h"
+#include "mapbuffer.h"
+#include <queue>
 
 #define INBOUNDS(x, y) \
  (x >= 0 && x < SEEX * my_MAPSIZE && y >= 0 && y < SEEY * my_MAPSIZE)
@@ -17,6 +19,23 @@ bool map::process_fields(game *g)
     found_field |= process_fields_in_submap(grid[x + y * my_MAPSIZE], x * SEEX, y * SEEY);
   }
  }
+
+ // Every 50 turns, process field updates for maps outside the view range.
+ if((int) g->turn % 50 == 0) {
+  std::map<tripoint, submap*, pointcomp>::iterator i;
+  for(i=MAPBUFFER.submaps.begin(); i!=MAPBUFFER.submaps.end(); i++) {
+   const tripoint& coord = i->first;
+   submap *sm = i->second;
+   
+   // Make sure the submap isn't in view.
+   bool inview = false;
+   if(inview) continue;
+
+   // Not in view? Good, process stuff!
+   fastforward_fields_in_submap(sm, coord.x, coord.y);
+  }
+ }
+ 
  return found_field;
 }
 
@@ -776,6 +795,301 @@ bool map::process_fields_in_submap(submap *sm, tile_coordinate submap_x, tile_co
 	return found_field;
 }
 
+int burn_all_fuel(submap *sm, field_entry* field, int x, int y) {			
+    int burned_volume = 0;\
+    std::vector<item>& items_in_tile = sm->itm[x][y];
+	for (int i = 0; i < items_in_tile.size(); i++) {
+		bool destroyed = false;
+		item *it = &(items_in_tile[i]); //Pointer to the item we are dealing with.
+
+        // TODO: Make onscreen and offscreen fires behave the same by adding an item burn function
+        //       and using it in both cases.
+
+        destroyed = it->burn(field->getFieldDensity() * 3);
+        if(destroyed) {
+		    burned_volume += items_in_tile[i].volume(); //Used to feed the fire based on volume of item burnt.
+        }
+
+        // Note: We're not creating smoke at all, since offscreen smoke is useless.
+
+
+		if (destroyed) {
+			//If we decided the item was destroyed by fire, remove it.
+			for (int m = 0; m < items_in_tile[i].contents.size(); m++) {
+				items_in_tile.push_back( items_in_tile[i].contents[m] );
+            }
+			items_in_tile.erase(items_in_tile.begin() + i);
+			i--;
+		}
+	}
+    return burned_volume;
+}
+
+struct fire_flood_fill_entry {
+    int x, y;
+    field_entry* field;
+};
+
+bool submap_has_flag(submap *sm, int x, int y, int flag) {
+    return (terlist[sm->ter[x][y]].flags & mfb(flag)) | ((furnlist[sm->frn[x][y]].flags & mfb(flag)));
+}
+
+/*
+Processes the fields in a submap at much lower accuracy. Mostly used for fire and clearing out fields
+while a map is offloaded.
+*/
+void map::fastforward_fields_in_submap(submap *sm, int x, int y)
+{
+	static const int fastforward_turns = 50;
+
+ // Used to hold a copy of the current field.
+ // Do not addField or removeField with this variable (it's just a copy afterall).
+	field curfield;
+ // A pointer to the current field effect.
+ // Used to modify or otherwise get information on the field effect to update.
+	field_entry* cur;
+ //Holds m.field_at(x,y).findField(fd_some_field) type returns.
+ // Just to avoid typing that long string for a temp value.
+	field_entry* tmpfld = NULL;
+	field_id curtype; //Holds cur->getFieldType() as thats what the old system used before rewrite.
+
+    // A queue of fire fields that we want to process in the next iteration.
+    // We'll potentially be running a lot of iterations in order to "flood fill"
+    // the area with fire.
+    std::queue<fire_flood_fill_entry> fire_process_next;
+    
+    // Temporary variable used to push entries to the back of the queue.
+    fire_flood_fill_entry ff_entry;
+
+
+	//Loop through all tiles in this submap
+	for (int locx = 0; locx < SEEX; locx++) {
+		for (int locy = 0; locy < SEEY; locy++) {
+           // get a copy of the field variable from the submap;
+           // contains all the pointers to the real field effects.
+			curfield = sm->fld[locx][locy];
+			for(std::vector<field_entry*>::iterator field_list_it = curfield.getFieldStart();
+                    field_list_it != curfield.getFieldEnd(); ++field_list_it){
+				//Iterating through all field effects in the submap's field.
+				cur = (*field_list_it); //dereferencing the iterator to a field_effect pointer.
+				if(cur == NULL) continue; //This shouldn't happen ever, but pointer safety is number one.
+
+				curtype = cur->getFieldType();
+                
+                // Again, legacy support in the event someone Mods setFieldDensity to allow more values.
+				if (cur->getFieldDensity() > 3 || cur->getFieldDensity() < 1)
+					debugmsg("Whoooooa density of %d", cur->getFieldDensity());
+
+                // Approximate the duration of this field using its density and half-life
+                int halflife = fieldlist[cur->getFieldType()].halflife;
+                if(halflife <= 0) halflife = 1;
+                int duration = cur->getFieldDensity() * halflife;
+                if(duration > fastforward_turns) {
+                    duration = fastforward_turns;
+                }
+                
+                std::vector<item>& items_in_tile = sm->itm[locx][locy];
+
+				switch (curtype) {
+
+				case fd_null:
+					break;	// Do nothing, obviously.  OBVIOUSLY.
+
+				case fd_acid:
+					for (int i = 0; i < i_at(x, y).size(); i++) {
+						item *melting = &(items_in_tile[i]); //For each item on the tile...
+
+						// see DEVELOPER_FAQ.txt for how acid resistance is calculated
+
+						int chance = melting->acid_resist() * 5 / duration + 1;
+						if(one_in(chance))
+                        {
+							//Destroy the object.
+                            // TODO: make this code less horrible(e.g. add items to list, then erase them outside loop)
+							for (int m = 0; m < items_in_tile[i].contents.size(); m++) {
+								i_at(x, y).push_back( items_in_tile[i].contents[m] );
+                            }
+							i_at(x, y).erase(items_in_tile.begin() + i);
+							i--;
+						}
+					}
+				break;
+
+				case fd_fire:
+                    ff_entry.x = locx; ff_entry.y = locy; ff_entry.field = cur;
+                    fire_process_next.push(ff_entry);
+                    continue; // Fire is special, since we need to flood-fill. Process separately.
+
+                //Stuff that just disappears if offscreen.
+				case fd_smoke:
+				case fd_tear_gas:
+				case fd_toxic_gas:
+				case fd_nuke_gas:
+				case fd_gas_vent:
+				case fd_fire_vent:
+				case fd_flame_burst:
+				case fd_electricity:
+				case fd_fatigue:
+				case fd_push_items:
+				case fd_shock_vent:
+				case fd_acid_vent:                
+                case fd_blood:
+                case fd_bile:
+                case fd_gibs_flesh:
+                case fd_gibs_veggy:
+                case fd_sap:
+                case fd_sludge:
+                break;
+
+				} // switch (curtype)
+
+				cur->adjustFieldAge(fastforward_turns);
+                bool should_dissipate = false;
+                while(cur->getFieldAge() > halflife && duration > 0) {
+                        cur->adjustFieldAge(-halflife);
+                        duration -= halflife;
+                        if(cur->getFieldDensity() == 1 || !cur->isAlive()){
+                            should_dissipate = true;
+                        }
+                        cur->setFieldDensity(cur->getFieldDensity() - 1);
+                }
+                if (should_dissipate == true || !cur->isAlive()) { // Totally dissapated.
+                    sm->field_count--;
+                    sm->fld[locx][locy].removeField(cur->getFieldType());
+                }
+			}
+		}
+	}
+
+    // Okay we're done with the regular fields that just have a short effect and dissipate.
+    // Now for fires.
+
+    int turns_left = fastforward_turns;
+    while(fire_process_next.size() && turns_left >= 0) {
+        std::queue<fire_flood_fill_entry> now_processing(fire_process_next); // store a local copy of the things we want to process.
+        fire_process_next = std::queue<fire_flood_fill_entry>(); // clear the next processing list to make room for the next iteration.
+        
+        // Loop over all the fires to process next
+        while(now_processing.size()) {
+            ff_entry = now_processing.back(); now_processing.pop();
+            field_entry* cur = ff_entry.field;
+            int x = ff_entry.x; int y = ff_entry.y;
+            turns_left--;
+            
+            int halflife = fieldlist[cur->getFieldType()].halflife;
+            if(halflife <= 0) halflife = 1;
+            int duration = cur->getFieldDensity() * halflife;
+            if(duration > fastforward_turns) {
+                duration = fastforward_turns;
+            }
+            
+            // Consume items as fuel to help us grow/last longer.
+
+            // We now burn all burnable items in the field, and extract how much fuel
+            // it was worth. The fuel is then substracted from the field age, which will
+            // automatically make the fire last longer.
+
+            // In the course of this function, we will continue using field age as a sort
+            // of inverse fuel indicator for the fire.
+            int burned_volume = burn_all_fuel(sm, cur, x, y);
+            cur->setFieldAge(cur->getFieldAge() - burned_volume);
+
+            // Reduce the age(the fuel) of the fire to increase the strength
+            while(cur->getFieldAge() < 0 && cur->getFieldDensity() < 3) {
+                cur->setFieldAge(cur->getFieldAge() + halflife);
+                cur->setFieldDensity(cur->getFieldDensity() + 1);
+            }
+
+            ter_id terrain_at_tile = sm->ter[x][y];
+            fur_id furniture_at_tile = sm->frn[x][y];
+
+            // If the flames are in a brazier, they're fully contained, so skip consuming terrain
+            if((tr_brazier != terrain_at_tile)&&(!submap_has_flag(sm, x, y, fire_container))) {
+                // Consume the terrain we're on
+                if (has_flag(explodes, x, y)) {
+                    //This is what destroys houses so fast.
+                    ter_set(x, y, ter_id(int(ter(x, y)) + 1));
+                    cur->setFieldAge(0); //Fresh level 3 fire.
+                    cur->setFieldDensity(3);
+                    g->explosion(x, y, 40, 0, true); //Boom.
+                    cur->adjustFieldAge(-10);
+
+                } else if (has_flag(flammable, x, y) || has_flag(flammable2, x, y) || has_flag(l_flammable, x, y)) {
+                    //If the terrain is flammable at all, burn it to the ground.
+                    g->m.destroy(g, x, y, false);
+                    cur->adjustFieldAge(-5);
+
+                } else if (terlist[ter(x, y)].flags & mfb(swimmable)) {
+                    cur->adjustFieldAge(800*duration);	// Flames die quickly on water
+                }
+
+                // If the flames are in a pit, it can't spread to non-pit
+                bool in_pit = (ter(x, y) == t_pit);
+
+                // If there's a lot of fuel, the fire can spread.
+                if(cur->getFieldDensity() >= 3) {
+                    for (int i = 0; i < 3; i++) {
+                        for (int j = 0; j < 3; j++) {
+                            int fx = x + i- 1, fy = y + j - 1;
+                            
+                            if(i == 0 && j == 0) continue;
+                            if(sm->field[fx][fy].findField(fd_fire)) {
+                                // No need to spread to already burning tiles.
+                                continue;
+                            }
+
+                            bool neighbour_in_pit = (ter(fx, fy) == t_pit);
+
+                            // Fire doesn't spread from pit to non-pit and vice verca
+                            if(neighbour_in_pit != in_pit) continue;
+                            
+                            if (INBOUNDS(fx, fy)) {
+                                if (submap_has_flag(sm, fx, fy, explodes)) {
+                                    sm->ter[fx[fy] = ter_id(int(sm->ter[fx][fy]) + 1));
+                                    g->explosion(fx, fy, 40, 0, true); //Nearby explodables? blow em up.
+                                } else if (
+                                    !has_flag(fire_container, x, y) &&
+                                    (flammable_items_at(fx, fy) || field_at(fx, fy).findField(fd_web))
+                                ) {
+                                        add_field(g, fx, fy, fd_fire, 3); //Nearby open flammable ground? Set it on fire.
+                                        tmpfld = field_at(fx,fy).findField(fd_fire);
+                                        if(tmpfld){
+                                            tmpfld->setFieldAge(100);
+                                        }
+                                        if(field_at(fx,fy).findField(fd_web))
+                                            g->m.remove_field(fx,fy,fd_web);
+                                            
+                                        // We created a new fire, add it to the list of things to process next iteration.
+                                        ff_entry.x = fx; ff_entry.y = fy; ff_entry.field = tmpfld;
+                                        fire_process_next.push(ff_entry);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            cur->adjustFieldAge(fastforward_turns);
+            bool should_dissipate = false;
+            while(cur->getFieldAge() > halflife && duration > 0) {
+                    cur->adjustFieldAge(-halflife);
+                    duration -= halflife;
+                    if(cur->getFieldDensity() == 1 || !cur->isAlive()){
+                        should_dissipate = true;
+                    }
+                    cur->setFieldDensity(cur->getFieldDensity() - 1);
+            }
+            if (should_dissipate == true || !cur->isAlive()) { // Totally dissapated.
+                sm->field_count--;
+                // x and y are absolute coordinates, submap_x and submap_y are the topleft corner of the submap
+                // (x - submap_x) is thus the position within the submap
+                sm->fld[x - submap_x][y - submap_y].removeField(cur->getFieldType());
+            }
+        }
+    }
+}
+
+
 //This entire function makes very little sense. Why are the rules the way they are? Why does walking into some things destroy them but not others?
 
 /*
@@ -1357,6 +1671,13 @@ signed char field_entry::setFieldDensity(const signed char new_density){
 int field_entry::setFieldAge(const int new_age){
 	
 	age = new_age;
+
+	return age;
+}
+
+int field_entry::adjustFieldAge(const int new_age){
+	
+	age += new_age;
 
 	return age;
 }

@@ -41,8 +41,8 @@ class mapbuffer
 
   int size();
 
- private:
   std::map<tripoint, submap*, pointcomp> submaps;
+ private:
   std::list<submap*> submap_list;
   game *master_game;
   bool dirty;
