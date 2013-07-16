@@ -3,9 +3,9 @@
 #include "game.h"
 #include <GL/gl.h>
 #include <GL/glu.h>
+#include <math.h>
 
 
-static SDL_Surface *screen;
 static SDL_Window *window;
 static SDL_Renderer *renderer;
 
@@ -20,6 +20,18 @@ SDL_mutex *maplock;
 static SDL_Thread* drawing_thread;
 
 static std::map<nc_color, SDL_Color> color_cache;
+
+// These are updated by the SDL loop in this thread.
+static float playerYRotation = 0; // rotation around the Y axis set by the player
+static float playerXRotation = 60; // rotation around the X axis set by the player
+
+static float playerXTranslation = 0; 
+static float playerYTranslation = 0;
+static float playerZTranslation = 2;
+static float playerZoomOut = 30;
+
+bool playerIsRotating = false;
+bool playerIsTranslating = false;
 
 SDL_Color RGB(char r, char g,  char b) {
     SDL_Color rval;
@@ -110,6 +122,19 @@ void game::begin_3d_rendering() {
     SDL_mutexP(maplock);
     clear_map_cache();
 
+    // Set rotation based on movement.
+    /*int dx = g->u.posx - player_pos_x;
+    int dy = g->u.posy - player_pos_y;
+    if(abs(dx) == 1 || abs(dy) == 1) {
+        double theta = atan2(dx, -dy);
+        playerYRotation = theta * 180 / 3.14;
+        playerXTranslation = -0.5f;
+        playerYTranslation = -0.5f;
+        playerZTranslation = 2;
+        playerXRotation = 5;
+        playerZoomOut = 2;
+    }*/
+
     // Read and store some relevant data like player position etc. so that
     // this doesn't de-sync while rendering.
     player_pos_x = g->u.posx; player_pos_y = g->u.posy;
@@ -182,10 +207,13 @@ void drawScene() {
     */
 
     // If we're controlling a vehicle, try to face the same way as the vehicle.
-    float yTranslation = 30;
-    float zTranslation = 2;
-    float yRotation = 0;
-    float zRotation = 60;
+    float yTranslation = playerZoomOut;
+    float zTranslation = playerZTranslation;
+    float yRotation = playerYRotation;
+    float xRotation = playerXRotation;
+
+    float xTranslationOffset = playerXTranslation;
+    float yTranslationOffset = playerYTranslation;
 
     if(is_driving) {
          // Rotate the view by the vehicle's rotation
@@ -193,13 +221,15 @@ void drawScene() {
         yRotation = 90 + turn_dir;
         yTranslation = 8;
         zTranslation = 4;
-        zRotation = 20;
+        xRotation = 20;
+        xTranslationOffset = 0;
+        yTranslationOffset = 0;
     }
 
     glTranslatef(0, 0, -yTranslation);
-    glRotatef(zRotation, 1, 0, 0);
+    glRotatef(xRotation, 1, 0, 0);
     glRotatef(yRotation, 0.0f, 1.0f, 0.0f);
-    glTranslatef(-player_pos_x,  -zTranslation,  -player_pos_y);
+    glTranslatef(-player_pos_x + xTranslationOffset,  -zTranslation,  -player_pos_y + yTranslationOffset);
 
     for(int x=0; x<SEEX_3D; x++) {
         for(int y=0; y<SEEY_3D; y++) {
@@ -493,7 +523,7 @@ int sdl_thread(void* data) {
     resizeWindow(width, height);
 
     while(tick_3d()) {
-        SDL_Delay(100);
+        SDL_Delay(30);
     }
 
     return 0;
@@ -517,9 +547,91 @@ int tick_3d() {
             break;
             }
         break;
+        case SDL_MOUSEBUTTONDOWN:
+            if(event.button.button == SDL_BUTTON_RIGHT) {
+                playerIsRotating = true;
+                SDL_SetRelativeMouseMode(SDL_TRUE);
+            }
+            else if(event.button.button == SDL_BUTTON_LEFT) {
+                playerIsTranslating = true;
+                SDL_SetRelativeMouseMode(SDL_TRUE);
+            }
+        break;
+        case SDL_MOUSEBUTTONUP:
+            if(event.button.button == SDL_BUTTON_RIGHT) {
+                playerIsRotating = false;
+                SDL_ShowCursor(true);
+                SDL_SetWindowGrab(window, SDL_FALSE);
+                SDL_SetRelativeMouseMode(SDL_FALSE);
+            }
+            else if(event.button.button == SDL_BUTTON_LEFT) {
+                playerIsTranslating = false;
+                SDL_SetRelativeMouseMode(SDL_FALSE);
+            }
+        break;
+        case SDL_MOUSEMOTION:
+            if(playerIsRotating) {
+                playerYRotation += (float)event.motion.xrel / 5;
+                playerXRotation += (float)event.motion.yrel / 5;
+            } else if(playerIsTranslating) {
+                int dx = event.motion.xrel;
+                int dy = event.motion.yrel;
+
+                // Try to adjust the movement by our current yRotation.
+                static const float PI = 3.14159;
+                float theta = playerYRotation * PI / 180;
+
+                float cs = cos(theta);
+                float sn = sin(theta);
+
+                float newx = dx * cs - dy * sn;
+                float newy = dx * sn + dy * cs;
+                
+                playerXTranslation -= newx / 5;
+                playerYTranslation -= newy / 5;
+            }
+        break;
+        case SDL_MOUSEWHEEL:
+            playerZoomOut -= event.wheel.y * 5;
+        break;
         default:
             break;
         }
+    }
+
+    const Uint8 *state = SDL_GetKeyboardState(NULL);
+    if ( state[SDL_SCANCODE_PAGEDOWN] ) {
+        playerZTranslation += 0.4f;
+    } else if( state[SDL_SCANCODE_PAGEUP] ) {
+        playerZTranslation -= 0.4f;
+    }
+
+    float dx = 0;
+    float dy = 0;
+    if( state[SDL_SCANCODE_A] ) {
+        dx += 1.5f;
+    } else if(state[SDL_SCANCODE_D]) {
+        dx -= 1.5f;
+    }
+    if( state[SDL_SCANCODE_W] ) {
+        dy += 1.5f;
+    } else if(state[SDL_SCANCODE_S]) {
+        dy -= 1.5f;
+    }
+
+    if(dx || dy) {
+        // Try to adjust the movement by our current yRotation.
+        static const float PI = 3.14159;
+        float theta = playerYRotation * PI / 180;
+
+        float cs = cos(theta);
+        float sn = sin(theta);
+
+        float newx = dx * cs - dy * sn;
+        float newy = dx * sn + dy * cs;
+        
+        playerXTranslation += newx;
+        playerYTranslation += newy;
     }
 
     drawScene();
