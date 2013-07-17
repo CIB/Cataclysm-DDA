@@ -166,10 +166,10 @@ ifdef TILES
     else
       DEFINES += -DOSX_SDL_LIBS
       CXXFLAGS += $(shell sdl-config --cflags)
-      LDFLAGS += $(shell sdl-config --libs) -lSDL_ttf
+      LDFLAGS += $(shell sdl-config --libs) -lSDL_ttf -lGL -lGLU
     endif
   else
-    LDFLAGS += -lSDL -lSDL_ttf -lfreetype -lz
+    LDFLAGS += -lSDL -lSDL_ttf -lfreetype -lz -lGL -lGLU
   endif
   DEFINES += -DTILES
   ifeq ($(TARGETSYSTEM),WINDOWS)
