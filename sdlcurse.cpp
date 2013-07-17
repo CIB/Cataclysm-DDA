@@ -95,7 +95,6 @@ void prepareFor2DRendering() {
 }
 
 void done2DRendering() {
-    glFlush();
     SDL_GL_SwapBuffers();
 }
 
@@ -139,11 +138,10 @@ bool WinCreate()
 
     char center_string[] = "SDL_VIDEO_CENTERED=center"; // indirection needed to avoid a warning
     SDL_putenv(center_string);
-	screen = SDL_SetVideoMode(WindowWidth, WindowHeight, 32, SDL_OPENGL);
+	SDL_SetVideoMode(WindowWidth, WindowHeight, 32, SDL_OPENGL);
 	//SDL_SetColors(screen,windowsPalette,0,256);
 
-	if(screen==NULL) return false;
-
+    screen = SDL_CreateRGBSurface(0, WindowWidth, WindowHeight, 32, 0x00ff0000, 0x0000ff00, 0x000000ff, 0xff000000);
     initGL();
 
 	ClearScreen();
@@ -162,54 +160,20 @@ void WinDestroy()
 	screen = NULL;
 };
 
-inline void SDL_OGL_FillRect(SDL_Rect& rect, unsigned char color) {
-    glColor3f(windowsPalette[color].r, windowsPalette[color].g, windowsPalette[color].b);
-
-    glBegin(GL_TRIANGLES);
-        glTexCoord2f(0, 0);
-        glVertex3f(rect.x, rect.y, 0.0f);
-        glTexCoord2f(0, 1);
-        glVertex3f(rect.x, rect.y+rect.h, 0.0f);
-        glTexCoord2f(1, 1);
-        glVertex3f( rect.x+rect.w, rect.y+rect.h, 0.0f);
-
-
-        glTexCoord2f(0, 0);
-        glVertex3f(rect.x, rect.y, 0.0f);
-        glTexCoord2f(1, 1);
-        glVertex3f( rect.x+rect.w, rect.y+rect.h, 0.0f);
-        glTexCoord2f(1, 0);
-        glVertex3f( rect.x+rect.w, rect.y, 0.0f);
-    glEnd();
-}
-
-
-inline void SDL_OGL_DrawTexturedRect(SDL_Rect& rect, SDL_Surface* image, bool cache) {
+inline void SDL_OGL_DrawScreen(SDL_Rect& rect) {
     GLuint texture;
-    if(!texture_cache.count(image) || !cache) {
-        glGenTextures(1, &texture);
-        glBindTexture(GL_TEXTURE_2D, texture);
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
 
-        if(!image) return;
-        // The character surface might be in a weird format, convert it.
-        SDL_Surface* intermediary = SDL_CreateRGBSurface(0, image->w, image->h, 32,
-                0x00ff0000, 0x0000ff00, 0x000000ff, 0xff000000);
+    if(!screen) return;
+    
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, 4, screen->w, screen->h, 0,
+                    GL_BGRA, GL_UNSIGNED_BYTE, screen->pixels);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-        SDL_BlitSurface(image, 0, intermediary, 0);
-
-        glGenTextures(1, &texture);
-        glBindTexture(GL_TEXTURE_2D, texture);
-        glTexImage2D(GL_TEXTURE_2D, 0, 4, intermediary->w, intermediary->h, 0,
-                        GL_BGRA, GL_UNSIGNED_BYTE, intermediary->pixels);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-        if(cache) texture_cache[image] = texture;
-
-        SDL_FreeSurface(intermediary);
-    } else {
-        glBindTexture(GL_TEXTURE_2D, texture_cache[image]);
-    }
     glColor3f(1.0f, 1.0f, 1.0f);
 
     glBegin(GL_TRIANGLES);
@@ -230,9 +194,7 @@ inline void SDL_OGL_DrawTexturedRect(SDL_Rect& rect, SDL_Surface* image, bool ca
     glEnd();
     glBindTexture(GL_TEXTURE_2D, 0);
 
-    if(!cache) {
-        glDeleteTextures(1,  &texture);
-    }
+    glDeleteTextures(1,  &texture);
 }
 
 //The following 3 methods use mem functions for fast drawing
@@ -243,7 +205,7 @@ inline void VertLineDIB(int x, int y, int y2, int thickness, unsigned char color
 	rect.y = y;
 	rect.w = thickness;
 	rect.h = y2-y;
-    SDL_OGL_FillRect(rect, color);
+    SDL_FillRect(screen, &rect, SDL_MapRGB(screen->format, windowsPalette[color].r,windowsPalette[color].g,windowsPalette[color].b));
 };
 inline void HorzLineDIB(int x, int y, int x2, int thickness, unsigned char color)
 {
@@ -252,7 +214,7 @@ inline void HorzLineDIB(int x, int y, int x2, int thickness, unsigned char color
 	rect.y = y;
 	rect.w = x2-x;
 	rect.h = thickness;
-    SDL_OGL_FillRect(rect, color);
+    SDL_FillRect(screen, &rect, SDL_MapRGB(screen->format, windowsPalette[color].r,windowsPalette[color].g,windowsPalette[color].b));
 };
 inline void FillRectDIB(int x, int y, int width, int height, unsigned char color)
 {
@@ -261,7 +223,7 @@ inline void FillRectDIB(int x, int y, int width, int height, unsigned char color
 	rect.y = y;
 	rect.w = width;
 	rect.h = height;
-    SDL_OGL_FillRect(rect, color);
+    SDL_FillRect(screen, &rect, SDL_MapRGB(screen->format, windowsPalette[color].r,windowsPalette[color].g,windowsPalette[color].b));
 };
 
 
@@ -308,7 +270,7 @@ static void OutputChar(Uint16 t, int x, int y, unsigned char color)
 			dy = TTF_FontAscent(font)-maxy+ttf_height_hack;
 			SDL_Rect rect;
 			rect.x = x+dx; rect.y = y+dy; rect.w = fontwidth; rect.h = fontheight;
-			SDL_OGL_DrawTexturedRect(rect, glyph, t < 0x80);
+			SDL_BlitSurface(glyph, NULL, screen, &rect);
 		}
 		if(t>=0x80) SDL_FreeSurface(glyph);
     }
@@ -333,7 +295,6 @@ void curses_drawwindow(WINDOW *win)
 {
     int i,j,w,drawx,drawy;
     unsigned tmp;
-    prepareFor2DRendering();
     for (j=0; j<win->height; j++){
         if (win->line[j].touched)
         {
@@ -417,6 +378,10 @@ void curses_drawwindow(WINDOW *win)
             };//for (i=0;i<_windows[w].width;i++)
         }
     };// for (j=0;j<_windows[w].height;j++)
+    
+    prepareFor2DRendering();
+    SDL_Rect rect; rect.x = 0; rect.y = 0; rect.w = WindowWidth; rect.h = WindowHeight;
+    SDL_OGL_DrawScreen(rect);
     done2DRendering();
     win->draw=false;                //We drew the window, mark it as so
 
