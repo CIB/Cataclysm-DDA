@@ -355,7 +355,7 @@ void player::hit_player(game *g, player &p, bool allow_grab)
 
 int stumble(player &u)
 {
- int stumble_pen = 2 * u.weapon.volume() + u.weapon.weight();
+ int stumble_pen = 2 * u.weapon.volume() + (u.weapon.weight() / 113);
  if (u.has_trait(PF_DEFT))
   stumble_pen = int(stumble_pen * .3) - 10;
  if (stumble_pen < 0)
@@ -1185,8 +1185,9 @@ void player::melee_special_effects(game *g, monster *z, player *p, bool crit,
 
 // Bonus attacks!
  bool shock_them = (has_active_bionic("bio_shock") && power_level >= 2 &&
-                    unarmed_attack() && (!mon || !z->has_flag(MF_ELECTRIC)) &&
-                    one_in(3));
+                    (unarmed_attack() || weapon.made_of("iron") ||
+                     weapon.made_of("steel") ||weapon.made_of("silver")) &&
+                    (!mon || !z->has_flag(MF_ELECTRIC)) && one_in(3));
 
  bool drain_them = (has_active_bionic("bio_heat_absorb") && power_level >= 1 &&
                     !is_armed() && (!mon || z->has_flag(MF_WARM)));

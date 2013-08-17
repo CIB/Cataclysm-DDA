@@ -101,6 +101,7 @@ class game
   quit_status uquit;    // used in main.cpp to determine what type of quit
   void save();
   void delete_save();
+  void write_memorial_file();
   void cleanup_at_end();
   bool do_turn();
   void draw();
@@ -112,6 +113,7 @@ class game
   void add_msg(const char* msg, ...);
   void add_msg_if_player(player *p, const char* msg, ...);
   void add_msg_player_or_npc(player *p, const char* player_str, const char* npc_str, ...);
+  std::vector<game_message> recent_messages(const int count); //Retrieves the last X messages
   std::string press_x(action_id act);	// (Press X (or Y)|Try) to Z
   std::string press_x(action_id act, std::string key_bound,
                                      std::string key_unbound);
@@ -258,7 +260,7 @@ class game
 
   std::vector <items_location_and_chance> monitems[num_monsters];
   std::vector <mission_type> mission_types; // The list of mission templates
-  mutation_branch mutation_data[PF_MAX2]; // Mutation data
+  mutation_branch mutation_data[PF_MAX2+1]; // Mutation data
   std::map<char, action_id> keymap;
   std::map<char, action_id> default_keymap;
 
@@ -364,6 +366,7 @@ void load_artifacts(); // Load artifact data
   void init_vehicles();     // Initializes vehicle types
   void init_autosave();     // Initializes autosave parameters
   void init_diseases();     // Initializes disease lookup table.
+  void init_dreams();		// Initializes dreams
 
   void load_keyboard_settings(); // Load keybindings from disk
 
