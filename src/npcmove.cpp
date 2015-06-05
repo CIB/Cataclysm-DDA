@@ -1026,7 +1026,7 @@ bool npc::wont_hit_friend( const tripoint &tar, int weapon_index )
     return true;
 }
 
-bool npc::is_blocking_position( const tripoint &p ) {
+bool npc::is_blocking_position( const tripoint &p ) const {
     // TODO: consider 3d? not very important for now
     // TODO: there might be a more elegant way to do this
     int dx = posx() - p.x;

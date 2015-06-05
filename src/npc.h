@@ -655,7 +655,7 @@ public:
  /**
   * Check if this NPC is blocking movement from the given position
   */
- bool is_blocking_position( const tripoint &p );
+ bool is_blocking_position( const tripoint &p ) const;
  bool wont_hit_friend(  const tripoint &p , int position = -1 );
  bool can_reload(); // Wielding a gun that is not fully loaded
  bool need_to_reload(); // Wielding a gun that is empty
